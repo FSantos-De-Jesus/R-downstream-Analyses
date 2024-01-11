@@ -1,0 +1,267 @@
+---
+title: "RNA-seq - Expression - Gene Ontology analysis"
+author: "Francisco Santos"
+date: '2022-05-21'
+output: html_document
+---
+
+
+# step 1 create a new dataframe with just the columns with the raw counts for healthy (HC) and CF patients before treatment (Base) and call it readcount. Use the third column (EntrezID) in the original file as the rownames of readcount.
+```{r}
+library("tidyverse")
+
+GSE124548File <- read_delim("GSE124548.raw.fixed.txt")
+
+readcount <- select(GSE124548File,"EntrezID", starts_with("RAW") & !ends_with("V2"))
+
+EntrezID <- readcount$EntrezID
+
+
+readcount <- subset(readcount, select = -EntrezID)
+
+rownames(readcount) = EntrezID
+
+rownames(readcount)
+
+
+
+# step2 Create a dataframe, called expgroup, with one column, labeled condition, that correctly assigns which column is healthy and which is CF. Use the column names of readount as rownames of expgroup.
+```
+
+
+
+
+
+```{r}
+# The experimental group order by , there's a better way to do this but for simplicity of understanding the experimental design 
+Condition <- c("Healthy","CF","Healthy","CF","Healthy","CF","Healthy","CF","CF","Healthy","Healthy","CF","Healthy","CF","Healthy","CF","Healthy","Healthy","Healthy","CF", "Healthy", "CF","Healthy","Healthy","Healthy","Healthy","Healthy","Healthy","Healthy","Healthy","CF","CF","CF","CF","CF","CF","CF","CF","CF","CF")
+
+#data frame with names  by condition 
+expgroup <- data.frame(Condition)
+rownames(expgroup) <- names(readcount)
+
+```
+
+step 3
+
+```{r}
+library(DESeq2) #see vignettes , I'd attach it 
+
+
+cds <- DESeqDataSetFromMatrix(countData = readcount,
+                              colData = expgroup,
+                              design = ~ Condition)
+
+
+
+```
+step 4
+
+```{r}
+cds <- estimateSizeFactors(cds)
+
+cds <- estimateDispersions(cds)
+
+plotDispEsts(cds)
+
+# The plot shows us that as the gene’s read count increases, dispersion decreases. 
+```
+step 5
+```{r}
+
+cds <- DESeq(cds)
+
+res <- results(cds)
+
+
+
+
+ConditionRes <- results(cds, name= "Condition_Healthy_vs_CF")
+
+head(res)
+```
+
+
+step6
+
+```{r}
+HowMany<- dim(subset(res, padj < 0.05 & log2FoldChange > 1 | log2FoldChange < -1))
+
+
+
+
+diffexpgenes <- subset(res, padj < 0.05 & log2FoldChange > 1 | log2FoldChange < -1)
+
+
+HowMany
+#210 genes
+rownames(diffexpgenes)
+
+
+```
+
+step 7
+```{r}
+
+normValues <- counts(cds , normalized=T)
+
+
+
+```
+
+STEP 8
+```{r}
+
+diffexpvalues <- normValues[diffexpgenes@rownames,]
+
+
+
+```
+
+
+step9
+```{r}
+library(cluster)
+
+diffexpvalues_dist = as.dist(1 - cor(t(diffexpvalues)))
+
+diffexpvalues_hclust <- hclust(diffexpvalues_dist, method = "average")
+
+plot(diffexpvalues_hclust)
+```
+
+
+```{r}
+diffexpvalues_hclust_8 <- cutree(diffexpvalues_hclust, k=8)
+
+cat(diffexpvalues_hclust_8)
+
+hclust_group1 <- normValues[names(which(diffexpvalues_hclust_8 == 1)),]
+hclust_group2 <- normValues[names(which(diffexpvalues_hclust_8 == 2)),]
+hclust_group3 <- normValues[names(which(diffexpvalues_hclust_8 == 3)),]
+hclust_group4 <- normValues[names(which(diffexpvalues_hclust_8 == 4)),]
+hclust_group5 <- normValues[names(which(diffexpvalues_hclust_8 == 5)),]
+hclust_group6 <- normValues[names(which(diffexpvalues_hclust_8 == 6)),]
+hclust_group7 <- normValues[names(which(diffexpvalues_hclust_8 == 7)),]
+
+hclust_group8 <- normValues[names(which(diffexpvalues_hclust_8 == 8)),]
+
+
+
+```
+
+
+```{r}
+head(hclust_group1) #184 genes in 1 group
+```
+
+
+```{r}
+head(hclust_group2) # 2 genes in 2 group
+```
+
+
+```{r}
+head(hclust_group3) # 2 genes in 3 group
+```
+
+
+```{r}
+head(hclust_group4) # 10 genes in 4 group
+```
+
+
+```{r}
+head(hclust_group5) # 5 genes in 5 group
+```
+
+
+```{r}
+head(hclust_group6) # 3 genes in 6 group
+```
+
+
+```{r}
+head(hclust_group7) # 2 genes in 7 group
+```
+
+
+```{r}
+head(hclust_group8) # 1 gene in 8 group
+
+
+```
+
+
+step10
+```{r}
+library("pheatmap")
+
+
+pheatmap(diffexpvalues, annotation_col = expgroup, scale = "row", cluster_cols = F, cluster_rows= diffexpvalues_hclust, show_rownames = F )
+```
+
+
+```{r}
+pheatmap(hclust_group1, annotation_col = expgroup, scale = "row", cluster_cols = F , show_rownames = F )
+```
+
+
+```{r}
+pheatmap(hclust_group2, annotation_col = expgroup, scale = "row", cluster_cols = F , show_rownames = F )
+```
+
+
+```{r}
+pheatmap(hclust_group3, annotation_col = expgroup, scale = "row", cluster_cols = F , show_rownames = F )
+```
+
+
+```{r}
+pheatmap(hclust_group4, annotation_col = expgroup, scale = "row", cluster_cols = F , show_rownames = F )
+```
+
+
+```{r}
+pheatmap(hclust_group5, annotation_col = expgroup, scale = "row", cluster_cols = F , show_rownames = F )
+```
+
+
+```{r}
+pheatmap(hclust_group6, annotation_col = expgroup, scale = "row", cluster_cols = F , show_rownames = F )
+```
+
+
+```{r}
+pheatmap(hclust_group7, annotation_col = expgroup, scale = "row", cluster_cols = F , show_rownames = F )
+```
+
+
+
+
+step11
+
+```{r}
+library(GOstats)
+library(GO.db)
+library(Category)
+library(org.Hs.eg.db)
+
+params <- new("GOHyperGParams", geneIds = rownames(diffexpgenes), universeGeneIds = rownames(readcount), annotation = "org.Hs.eg", ontology = "BP", pvalueCutoff = 0.001 , testDirection = "over")
+
+(overRepresented=hyperGTest(params))
+
+
+summary(overRepresented)[,c(1,2,5,6,7)]
+
+
+```
+
+step 12
+```{r}
+#Looking at the general and group 1 heatmaps we can say that there's many regions that could be highly related to the CF condition. For example, the patients 30,27,24, and 11 did not have that highly expression as the rest of the CF patients for group 1 genes, but in some point, all CF patients had the same rate of expression, meaning that the group could be related to the condition. In group 4, analyzing the heatmaps, there is a high chance that these genes inside this group could be highly related to CF condition because all CF patients has low or none expression for that group of genes. Specifically for C-C motif chemokine receptor 8, CD70 molecule, collagen type IV alpha 3,C-C motif chemokine receptor 10,complement factor H, family with sequence similarity 81 member B genes.
+```
+
+
+
+

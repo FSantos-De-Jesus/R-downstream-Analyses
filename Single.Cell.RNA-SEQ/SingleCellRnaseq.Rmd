@@ -1,0 +1,140 @@
+---
+title: "single cell RNA-seq"
+author: "Francisco Santos"
+date: '2022-04-24'
+output: html_document
+---
+================================================================================
+Objective is evaluate the genes expressed in 34 single cell rna seq data to identify the identity based on the expression 
+
+================================================================================
+
+step 1
+```{r}
+library(dplyr)
+library(Seurat)
+library(readr)
+
+GSM3036909.data <- read_tsv("~/Downloads/GSM3036909.tsv")
+
+
+```
+
+step 2
+```{r}
+
+pdac1 <- CreateSeuratObject(counts = GSM3036909.data, project = "pdac1", min.cells = 3, min.features = 200)
+
+#Seurat object  
+pdac1
+
+```
+step 3
+```{r}
+# new column o the object  summarizing how many mit genes were identified in each dif cells
+pdac1[["percent.mt"]] <- PercentageFeatureSet(object = pdac1, pattern = "^MT-")
+```
+
+step 4
+```{r}
+# visualize QC metrics as violin plot
+
+VlnPlot(object = pdac1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol=3)
+# possibly theres 0% of genes that map to the mitochondrial genome
+```
+
+step5 Filter the data
+```{r}
+# removing the unwanted cells from the dataset. features >200, <2500. mt<5.
+pdac1 <- subset(x = pdac1, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+
+```
+
+
+step6
+```{r}
+# normalize the data using the LogNormalize with scale of 10000.
+
+pdac1 <- NormalizeData(object = pdac1, normalization.method = "LogNormalize", scale.factor = 10000)
+
+# the most 2000 variable genes.
+pdac1 <- FindVariableFeatures(object=pdac1, selection.method = "vst", nfeatures = 2000)
+
+
+
+```
+step7
+```{r}
+#linear transformation
+genes <- rownames(x=pdac1) #extracting all the gene names into the object gene to use as feature ion the scalingdata function.
+
+pdac1 <- ScaleData(object = pdac1, features = genes)
+
+
+```
+
+step8
+```{r}
+#run [PCA]
+pdac1 <- RunPCA(object= pdac1)
+
+```
+
+step9
+```{r}
+VizDimLoadings(object = pdac1, dims = 1:3, reduction = "pca", col = "red")
+
+DimPlot(object = pdac1, reduction="pca")
+
+#No from the PCA analysis we cannot tell specifically the number of cell types that are present.
+```
+step 10
+```{r}
+DimHeatmap(object = pdac1, dims = 1:10, cells= 200)
+```
+
+step 11
+```{r}
+pdac1 <- JackStraw(object = pdac1,num.replicate = 100,dims = 20)
+
+
+ElbowPlot(object = pdac1)
+```
+step 12
+```{r}
+pdac1 <- FindNeighbors(object = pdac1, dims = 1:9) 
+
+pdac1 <- FindClusters(object = pdac1, resolution = 0.6 )
+
+
+
+```
+step 13 
+```{r}
+#non-linear dimension reduction
+pdac1 <- RunUMAP(object = pdac1, dims = 1:9)
+
+DimPlot(object = pdac1, reduction="umap")
+
+#obtained 8 clusters (maybe different cell types) but theres some points (13 to be exact) closer to another different cluster than his own cluster.
+```
+
+
+step 14
+```{r}
+pdac1.markers <- FindAllMarkers(object = pdac1, only.pos = T)
+
+pdac1.markers %>% group_by(cluster) %>% slice_max(n=2, order_by = avg_log2FC)
+```
+step15
+```{r}
+VlnPlot(object = pdac1, features = c("16289", "10631", "14236", "6649", "10246", "3135", "7776", "2136" ))
+```
+
+
+
+step16
+```{r}
+FeaturePlot(object = pdac1, features = c("16289", "10631", "14236", "6649", "10246", "3135", "7776", "2136" ))
+```
+

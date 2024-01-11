@@ -1,0 +1,438 @@
+---
+title: "research2"
+author: "Francisco Santos"
+date: '2022-05-01'
+output: html_document
+---
+
+#fastqc, triming, how alignming, etc (workflow) in general.
+
+
+------------------diagnosis--------------
+data preparation
+```{r}
+#loading the count files
+SRR51 <- read.delim("SRR8263751_reads.bam.count", header = T)
+SRR52 <- read.delim("SRR8263752_reads.bam.count",header=T)
+SRR53 <- read.delim("SRR8263753_reads.bam.count", header=T)
+SRR54 <- read.delim("SRR8263754_reads.bam.count", header=T)
+SRR55 <- read.delim("SRR8263755_reads.bam.count", header=T)
+SRR56 <- read.delim("SRR8263756_reads.bam.count", header=T)
+SRR57 <- read.delim("SRR8263757_reads.bam.count", header=T)
+SRR58 <- read.delim("SRR8263758_reads.bam.count", header=T)
+SRR59 <- read.delim("SRR8263759_reads.bam.count", header=T)
+SRR60 <- read.delim("SRR8263760_reads.bam.count", header=T)
+SRR61 <- read.delim("SRR8263761_reads.bam.count", header=T)
+SRR62 <- read.delim("SRR8263762_reads.bam.count", header=T)
+SRR63 <- read.delim("SRR8263763_reads.bam.count", header=T)
+SRR64 <- read.delim("SRR8263764_reads.bam.count", header=T)
+SRR65 <- read.delim("SRR8263765_reads.bam.count", header=T)
+SRR66 <- read.delim("SRR8263766_reads.bam.count", header=T)
+SRR67 <- read.delim("SRR8263767_reads.bam.count", header=T)
+SRR68 <- read.delim("SRR8263768_reads.bam.count", header=T)
+SRR69 <- read.delim("SRR8263769_reads.bam.count", header=T)
+SRR70 <- read.delim("SRR8263770_reads.bam.count", header=T)
+SRR71 <- read.delim("SRR8263771_reads.bam.count", header=T)
+SRR72 <- read.delim("SRR8263772_reads.bam.count", header=T)
+SRR73 <- read.delim("SRR8263773_reads.bam.count", header=T)
+SRR74 <- read.delim("SRR8263774_reads.bam.count", header=T)
+SRR75 <- read.delim("SRR8263775_reads.bam.count", header=T)
+SRR76 <- read.delim("SRR8263776_reads.bam.count", header=T)
+SRR77 <- read.delim("SRR8263777_reads.bam.count", header=T)
+SRR78 <- read.delim("SRR8263778_reads.bam.count", header=T)
+
+#combining count files to a count matrix
+SRM <- as.matrix(cbind(SRR51,SRR52,SRR53,SRR54,SRR55,SRR56,SRR57,SRR58,SRR59,SRR60,SRR61,SRR62,SRR63,SRR64,SRR65,SRR66,SRR67,SRR68,SRR69,SRR70,SRR71,SRR72,SRR73,SRR74,SRR75,SRR76,SRR77,SRR78))
+
+colSums(SRM)
+#plenty of data above every read million
+
+datamat = apply(SRM, 2, as.integer)
+SRM= as.data.frame(datamat)
+rownames(SRM) = rownames(SRR51)
+
+#Looking at the low expressed genes
+SRM_wnames = SRM
+SRM_wnames$gene = rownames(SRM)
+SRM_melt = melt(SRM_wnames)
+ggplot(SRM_melt) +
+  geom_violin(mapping = aes(x=variable, y=log2(value +1)))
+```
+
+eliminating the low expressed genes and exp design 
+```{r}
+#theres to many genes that are low expressed
+genesum <- rowSums(SRM)
+
+hist(log2(genesum+1)) # histogram with the low expressed
+
+data_filt = subset(SRM, genesum>28)
+
+genesum_filt <- rowSums(data_filt)
+
+hist(log2(genesum_filt+1)) #histogram w/o the low expressed genes
+
+# the experimental design
+expdesign <- read.csv("exp.design-2.txt", row.names=1, sep = ",")
+```
+
+DESeq and plotting the dispersion
+```{r}
+#DESeq object with data_filt
+cds <- DESeqDataSetFromMatrix(countData = data_filt,
+                              colData = expdesign,
+                              design = ~ diagnosis)
+#difference in the reads and dispersion?
+cds <- estimateSizeFactors(cds)
+cds <- estimateDispersions(cds)
+
+plotDispEsts(cds)
+# in diagnosis the read count increases, dispersion decreases.
+
+
+
+```
+
+the P-value corrected for multiple hypotheses testing -cutoff
+```{r}
+#the P-value corrected for multiple hypotheses testing -cutoff
+cds <- DESeq(cds)
+
+resultsNames(cds)
+
+resH.CD <- results(cds, name="diagnosis_Healthy_vs_CD")
+resUC.CD <- results(cds, name="diagnosis_UC_vs_CD")
+
+
+
+sum(resH.CD$padj < 0.05, na.rm = T)
+#447 genes that have adjusted p-value less than 0.05
+sum(resUC.CD$padj < 0.05, na.rm = T)
+#0 genes that have adjusted p-value less than 0.05
+
+#decision of fold change
+plotMA(resH.CD, ylim=c(-2,2))
+plotMA(resH.CD, ylim=c(-5,5))
+plotMA(resH.CD, ylim=c(-10,10))
+# greater than 0.5 and less than -0.5?
+
+plotMA(resUC.CD, ylim=c(-5,5))
+plotMA(resUC.CD, ylim=c(-10,10))
+
+
+geneInd <- resH.CD[ which(resH.CD$padj < 0.05 & resH.CD$log2FoldChange > 1), ]
+geneRep <- resH.CD[ which(resH.CD$padj < 0.05 & resH.CD$log2FoldChange < -1), ]
+geneH.CD <- rbind(geneInd, geneRep)
+
+
+rownames(geneInd)
+rownames(geneRep)
+rownames(geneH.CD)
+
+dim(geneH.CD)
+```
+
+Visualizing one gene to se that is looking good
+```{r}
+# Visualizing one gene
+normalizedvalue = counts(cds,normalized=TRUE)
+normvalue_wname = normalizedvalue
+normvalue_wname = as.data.frame(normvalue_wname)
+normvalue_wname$gene = rownames(normalizedvalue)
+norm_melt = melt(normvalue_wname)
+
+Vizgene = subset(norm_melt, gene=="ENSG00000007216")
+
+ggplot(Vizgene) +
+  geom_bar(mapping = aes(x=variable, y=value), stat="identity")
+#specifically for that gene the expression on healthy subjects its massive, however for UC and CD people are usually lower. So the data make sense, the thing is the analysis
+```
+
+
+
+GO-TERM enrichment of general dif exp genes
+```{r}
+# GO-term enrichment analysis with TxDb
+
+library(biomaRt)
+ensembl <- useMart("ENSEMBL_MART_ENSEMBL")
+ens_datasets <- listDatasets(ensembl)
+hg38 <- useDataset("hsapiens_gene_ensembl", mart=ensembl)
+hg_filters <- listFilters(hg38)
+hg38Attributes <- listAttributes(hg38)
+
+# changing ensblID to entrezID in difexp genes (geneIds)
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+genes <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=rownames(geneH.CD),
+  mart=mart)
+#437 genes but some genes are unknown
+
+#changing the ensblID to entrezID in count matrix (universeGeneIds)
+# cambia tambien el de data_filt
+universeGene <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=rownames(data_filt),
+  mart=mart)
+
+
+params <- new("GOHyperGParams", geneIds = genes$entrezgene_id, universeGeneIds = universeGene$entrezgene_id, annotation = "org.Hs.eg", ontology = "BP", pvalueCutoff = 0.001 , testDirection = "over")
+
+(overRepresented=hyperGTest(params))
+
+summary(overRepresented)[,c(1,2,5,6,7)]
+
+#which database (annotation) should I use
+#org.hs.eg
+```
+
+
+```{r}
+# pheatmap
+
+
+#do a heatmap with the pearson method
+#hclust2 <- function(x, method="average", ...) {
+          # hclust(x, method=method, ...)
+}
+
+#dist2 <- function(x, ...) {
+         as.dist(1-cor(t(x), method="pearson"))
+}
+
+
+
+
+#heatmap.2(as.matrix(sigGenes.normalized),
+ #   hclustfun=hclust2,
+  #  distfun=dist2,
+   # scale="row",
+    #cexCol=0.6,
+    #Colv=TRUE,
+    #sepcolor="black",
+    #dendrogram="both",
+    #key=TRUE,
+    #symkey=FALSE,
+    #density.info="none",
+    #trace="none",
+    #cexRow=0.4)
+# some dif expressions
+
+
+
+#pheatmap(assay(sigGenes.normalized)[genes,], cluster_rows=T, show)
+#sig
+```
+
+CLUSTERING the diferential exp genes
+```{r}
+# CLUST
+
+#genes induced and repressed
+genes_res = c(rownames(geneInd),rownames(geneRep))
+normalized <- counts(cds , normalized=T)
+sigGenes.normalized <- normalized[genes_res,]
+
+
+#rownames(normalized)=rownames(data_filt)
+
+normValues <- counts(cds , normalized=T)
+geneexpval <- normValues[geneH.CD@rownames,]
+
+# first transponse the normalized matrix, then correlation and convert it to 
+#distance by substracting 1 and then make an distance object
+diffexpvalues_hclust <- hclust(as.dist(1-cor(t(geneexpval))), method = "average")
+
+plot(diffexpvalues_hclust, labels = F)
+abline( h = .8 , col = "red", lwd = 2 ) # line of the cutree
+
+
+
+#heatmap of the dif expressed genes.
+pheatmap(sigGenes.normalized, annotation_col = expdesign, scale = "row", cluster_cols = F, cluster_rows= diffexpvalues_hclust, show_rownames = F )
+```
+
+heatmaps and names of the genes of the group clusters
+```{r}
+
+# output is a named vector where each gene is assigned to a cluster.
+gene_cluster <- cutree(diffexpvalues_hclust, k= 6)
+
+?cutree
+
+# for go-term the groups
+clustg1 <- names(which(gene_cluster==1))
+clustg2 <- names(which(gene_cluster==2))
+clustg3 <- names(which(gene_cluster==3))
+clustg4 <- names(which(gene_cluster==4))
+clustg5 <- names(which(gene_cluster==5))
+clustg6 <- names(which(gene_cluster==6))
+
+#for clustering the groups
+hclust_group1 <- normValues[names(which(gene_cluster == 1)),]
+hclust_group2 <- normValues[names(which(gene_cluster == 2)),]
+hclust_group3 <- normValues[names(which(gene_cluster == 3)),]
+hclust_group4 <- normValues[names(which(gene_cluster == 4)),]
+hclust_group5 <- normValues[names(which(gene_cluster == 5)),]
+hclust_group6 <- normValues[names(which(gene_cluster == 6)),]
+
+
+pheatmap(hclust_group1, annotation_col = expdesign, scale = "row", cluster_cols = F , show_rownames = F )
+pheatmap(hclust_group2, annotation_col = expdesign, scale = "row", cluster_cols = F , show_rownames = F )
+pheatmap(hclust_group3, annotation_col = expdesign, scale = "row", cluster_cols = F , show_rownames = F )
+pheatmap(hclust_group4, annotation_col = expdesign, scale = "row", cluster_cols = F , show_rownames = F )
+pheatmap(hclust_group5, annotation_col = expdesign, scale = "row", cluster_cols = F , show_rownames = F )
+pheatmap(hclust_group6, annotation_col = expdesign, scale = "row", cluster_cols = F , show_rownames = F )
+
+
+#1,4,5 clusters are the most diferential expresion visible.
+```
+
+GO-TERM enrichment for clust group
+```{r}
+# changing transcrp id to entrezid by group clust
+gogroup1 <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=clustg1,
+  mart=mart)
+
+gogroup2 <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=clustg2,
+  mart=mart)
+
+
+gogroup3 <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=clustg3,
+  mart=mart)
+
+gogroup4 <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=clustg4,
+  mart=mart)
+
+
+gogroup5 <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=clustg5,
+  mart=mart)
+
+gogroup6 <- getBM(
+  filters="ensembl_gene_id",
+  attributes=c("ensembl_gene_id", "entrezgene_id"),
+  values=clustg6,
+  mart=mart)
+
+# GO-ENRICHMENT BY CLUST GROUP
+
+#group1
+paramsg1 <- new("GOHyperGParams", geneIds = gogroup1$entrezgene_id, universeGeneIds = universeGene$entrezgene_id, annotation = "org.Hs.eg", ontology = "BP", pvalueCutoff = 0.001 , testDirection = "over")
+
+(overRepresentedg1=hyperGTest(paramsg1))
+summary(overRepresentedg1)[,c(1,2,3,4,5,6,7)]
+# group1 is metabolic and detoxification process
+
+#group2
+paramsg2 <- new("GOHyperGParams", geneIds = gogroup2$entrezgene_id, universeGeneIds = universeGene$entrezgene_id, annotation = "org.Hs.eg", ontology = "BP", pvalueCutoff = 0.001 , testDirection = "over")
+
+(overRepresentedg2=hyperGTest(paramsg2))
+summary(overRepresentedg2)
+
+#group3
+paramsg3 <- new("GOHyperGParams", geneIds = gogroup3$entrezgene_id, universeGeneIds = universeGene$entrezgene_id, annotation = "org.Hs.eg", ontology = "BP", pvalueCutoff = 0.001 , testDirection = "over")
+
+(overRepresentedg3=hyperGTest(paramsg3))
+summary(overRepresentedg3)[,c(1,2,5,6,7)]
+#protein binding regulation
+
+#group4
+paramsg4 <- new("GOHyperGParams", geneIds = gogroup4$entrezgene_id, universeGeneIds = universeGene$entrezgene_id, annotation = "org.Hs.eg", ontology = "BP", pvalueCutoff = 0.001 , testDirection = "over")
+
+(overRepresentedg4=hyperGTest(paramsg4))
+summary(overRepresentedg4)[,c(1,2,5,6,7)]
+# response to external stimilus and inmune and inflamatory response. The interested group
+
+# group5
+paramsg5 <- new("GOHyperGParams", geneIds = gogroup5$entrezgene_id, universeGeneIds = universeGene$entrezgene_id, annotation = "org.Hs.eg", ontology = "BP", pvalueCutoff = 0.001 , testDirection = "over")
+
+(overRepresentedg5=hyperGTest(paramsg5))
+summary(overRepresentedg5)[,c(1,2,5,6,7)]
+# defense response and inflammatory response, interested group
+
+#group6
+paramsg6 <- new("GOHyperGParams", geneIds = gogroup6$entrezgene_id, universeGeneIds = universeGene$entrezgene_id, annotation = "org.Hs.eg", ontology = "BP", pvalueCutoff = 0.001 , testDirection = "over")
+
+(overRepresentedg6=hyperGTest(paramsg6))
+summary(overRepresentedg6)[,c(1,2,5,6,7)]
+# strange but not that expressed
+
+```
+
+------------smoke n diagnosis----------------------
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = data_filt,
+                              colData = expdesign,
+                              design = ~ smoking_status)
+#difference in the reads and dispersion?
+dds <- estimateSizeFactors(dds)
+dds <- estimateDispersions(dds)
+
+plotDispEsts(dds)
+
+
+```
+
+
+```{r}
+dds <- DESeq(dds)
+
+resultsNames(dds)
+
+resmoking <- results(cds)
+
+plotMA(resmoking, ylim=c(-5,5))
+
+```
+
+```{r}
+geneInd_smoking <- resmoking[ which(resmoking$padj < 0.05 & resmoking$log2FoldChange > 1), ]
+geneRep_smoking <- resmoking[ which(resmoking$padj < 0.05 & resmoking$log2FoldChange < -1), ]
+gene_smoking<- rbind(geneInd_smoking, geneRep_smoking)
+
+
+
+
+dim(gene_smoking)
+
+```
+
+---------------------comparing UC and CD dif expression
+
+```{r}
+
+UC.CD.difexpg <- results(cds, contrast=c("diagnosis", "UC", "CD"))
+
+plotMA(UC.CD.difexpg, ylim=c(-5,5))
+plotMA(UC.CD.difexpg, ylim=c(-3,3))
+
+
+
+UC.CD.geneInd <- UC.CD.difexpg[ which(UC.CD.difexpg$padj < 0.05 & UC.CD.difexpg$log2FoldChange > 1), ]
+UC.CD.geneRep <- UC.CD.difexpg[ which(UC.CD.difexpg$padj < 0.05 & UC.CD.difexpg$log2FoldChange < -1), ]
+geneUC.CD <- rbind(UC.CD.geneInd, UC.CD.geneRep)
+dim(geneUC.CD)
+
+rownames(UC.CD.geneInd)
+rownames(UC.CD.geneRep)
+```
+
